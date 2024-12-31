@@ -1,0 +1,53 @@
+name: ci-pipeline
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'helm/**'
+jobs:
+  docker-build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - name: Login to DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build and Push action
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Wisecow-App/Dockerfile
+        push: true
+        tags: ${{ secrets.DOCKERHUB_USERNAME }}/wisecow:${{github.run_id}}
+
+  update-newtag-in-helm-chart:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: 'helion55/wisecow'
+    needs: docker-build-and-push
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.TOKEN_GITHUB }}
+
+    - name: Update image tag in deployment file
+      run: |
+        sed -i 's/tag: .*/tag: "${{github.run_id}}"/' Wisecow-App/helm/wisecow-chart/values.yaml
+
+    - name: Commit and push changes
+      run: |
+        git config --global user.email "mail@rakeshbajpayee.in"
+        git config --global user.name "Helion55"
+        git add Wisecow-App/helm/wisecow-chart/values.yaml
+        git commit -m "Updated image tag in deployment"
+        git push
